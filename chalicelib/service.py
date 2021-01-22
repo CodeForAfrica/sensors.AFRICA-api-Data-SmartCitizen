@@ -15,7 +15,7 @@ from chalicelib.sensorafrica import (
     post_sensor_data,
     post_sensor_type, )
 
-from chalicelib.settings import S3_BUCKET_NAME, S3_CHANNEL_START_KEY, S3_OBJECT_KEY, OWNER_ID
+from chalicelib.settings import S3_BUCKET_NAME, S3_CHANNEL_START_KEY, S3_OBJECT_KEY,SMART_CITIZEN_AUTH_TOKEN, OWNER_ID
 from chalicelib.utils import address_converter
 
 from time import localtime, sleep, strftime
@@ -28,6 +28,14 @@ def get_airqo_node_sensors_data(node_id):
         raise Exception(response.reason)
     return response.json()
 
+def get_devices_data(device_id):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36",
+        "Authorization": f"Bearer {SMART_CITIZEN_AUTH_TOKEN}"}
+    response = requests.get(url="https://api.smartcitizen.me/v0/devices/{}".format(device_id), headers=headers)
+    if not response.ok:
+        raise Exception(response.reason)
+    return response.json()
 
 def history(app):
     #function assumes node & sensors already exists
@@ -56,7 +64,7 @@ def run(app):
     except:
         channel_start_index = { "start": 0 }
    
-    with open("chalicelib/channels.json") as data:
+    with open("chalicelib/devices.json") as data:
         channels = json.load(data)
 
         sliced_channels = channels[channel_start_index["start"] : channel_start_index["start"] + 10]
