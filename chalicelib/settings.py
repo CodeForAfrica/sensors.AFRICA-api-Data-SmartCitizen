@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "cfa-airquality")
-S3_CHANNEL_START_KEY = os.environ["S3_CHANNEL_START_KEY"]
 S3_OBJECT_KEY = os.environ["S3_OBJECT_KEY"]
 SCHEDULE_RATE = os.getenv("SCHEDULE_RATE", 1)
 SENSORS_AFRICA_API = os.environ.get("SENSORS_AFRICA_API", "http://127.0.0.1:8000")
