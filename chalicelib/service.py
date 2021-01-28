@@ -93,7 +93,6 @@ def run(app):
                         "owner": int(OWNER_ID),
                         "location": location
                         })
-                print(smart_citizen__node)
                 #We are interested with temperature, humidity & particle matter readings
                 #These have measurement ids in the API of 1 - temp, 2 - humidity, 
                 #14 - PM 2.5, 13 - PM 10 & 27 - PM 1
