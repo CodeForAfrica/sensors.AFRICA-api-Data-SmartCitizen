@@ -12,21 +12,10 @@ sentry_sdk.init(
     traces_sample_rate=1.0
 )
 
-app = Chalice(app_name='sensors.AFRICA-smartcitizen')
-
-@app.route("/")
-def index():
-    app.log.debug("run")
-    return run(app)
+app = Chalice(app_name='sensors-africa-smartcitizen')
 
 # Automatically runs every 10 minutes
-@app.schedule(Rate(int(SCHEDULE_RATE), unit=Rate.MINUTES))
+@app.schedule(Rate(int(SCHEDULE_RATE), unit=Rate.HOURS))
 def periodic_task(event):
     app.log.debug(event.to_dict())
     return run(app)
-
-# Automatically runs every 10 minutes
-@app.schedule(Rate(int(SCHEDULE_RATE), unit=Rate.MINUTES))
-def historical_push(event):
-    app.log.debug(event.to_dict())
-    return history(app)

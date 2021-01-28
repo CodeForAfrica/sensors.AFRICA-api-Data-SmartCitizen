@@ -1,6 +1,8 @@
 ### chalice ###
 .chalice/deployments/
 .chalice/venv/
+.chalice/deployed/
+.chalice/config.json
 .env/
 
 .# Created by https://www.toptal.com/developers/gitignore/api/vim,linux,macos,dotenv,python,virtualenv,intellij+all,visualstudiocode

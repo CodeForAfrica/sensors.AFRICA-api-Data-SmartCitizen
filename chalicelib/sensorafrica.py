@@ -64,7 +64,7 @@ def get_sensors_africa_nodes():
     response = requests.get(f"{SENSORS_AFRICA_API}/v1/node/",
     headers={"Authorization": f"Token {SENSORS_AFRICA_AUTH_TOKEN}"})
     if response.ok:
-        return response.json()
+        return response.json()["results"]
     return []
 
 def get_sensors_africa_locations():
@@ -75,7 +75,7 @@ def get_sensors_africa_locations():
             Using latitude, longitude as a key and location id as value to help us find already existing location latter without having to ping the server
             Using round ensures latitude, longitude value will be the same as lat_log in the run method.
         """
-        formated_response = [{f'{round(float(location["latitude"]), 3)}, {round(float(location["longitude"]), 3)}':
+        formated_response = [{f'{round(float(location["latitude"]), 6)}, {round(float(location["longitude"]), 6)}':
                             f'{location["id"]}'} for location in response.json() if location["latitude"] and location["longitude"]]
 
         return formated_response

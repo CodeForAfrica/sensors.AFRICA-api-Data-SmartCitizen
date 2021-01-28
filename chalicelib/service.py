@@ -15,19 +15,20 @@ from chalicelib.sensorafrica import (
     post_sensor_data,
     post_sensor_type, )
 
-from chalicelib.settings import S3_BUCKET_NAME, S3_CHANNEL_START_KEY, S3_OBJECT_KEY, OWNER_ID
+from chalicelib.settings import S3_BUCKET_NAME, S3_OBJECT_KEY,SMART_CITIZEN_AUTH_TOKEN, OWNER_ID
 from chalicelib.utils import address_converter
 
 from time import localtime, sleep, strftime
+from datetime import datetime as dt
 
-def get_airqo_node_sensors_data(node_id):
+def get_device_data(device_id):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36"}
-    response = requests.get(url="https://thingspeak.com/channels/{}/feeds.json".format(node_id), headers=headers)
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36",
+        "Authorization": f"Bearer {SMART_CITIZEN_AUTH_TOKEN}"}
+    response = requests.get(url="https://api.smartcitizen.me/v0/devices/{}".format(device_id), headers=headers)
     if not response.ok:
         raise Exception(response.reason)
     return response.json()
-
 
 def history(app):
     #function assumes node & sensors already exists
@@ -46,32 +47,24 @@ def run(app):
     try:
         response = s3client.get_object(Bucket=S3_BUCKET_NAME, Key=S3_OBJECT_KEY)
         body = response['Body'].read()
-        channel_last_entry_dict = pickle.loads(body)
+        device_last_entry_dict = pickle.loads(body)
     except:
-        channel_last_entry_dict = dict()
-
-    try:
-        res = s3client.get_object(Bucket=S3_BUCKET_NAME, Key=S3_CHANNEL_START_KEY)
-        channel_start_index = pickle.loads(res['Body'].read())
-    except:
-        channel_start_index = { "start": 0 }
+        device_last_entry_dict = dict()
    
-    with open("chalicelib/channels.json") as data:
-        channels = json.load(data)
+    with open("chalicelib/devices.json") as data:
+        devices = json.load(data)
 
-        sliced_channels = channels[channel_start_index["start"] : channel_start_index["start"] + 10]
+        for d in devices:
+            device = get_device_data(d)
 
-        for channel in sliced_channels:
-            
-            channel_data = get_airqo_node_sensors_data(channel["id"])
-            #if channel id key does not exist in the map dict initiate it with 0
-            if not channel["id"] in channel_last_entry_dict:
-                channel_last_entry_dict[channel["id"]] = 0
+            if not device["id"] in device_last_entry_dict:
+                device_last_entry_dict[device["id"]] = "2000-01-01T00:00:00Z"
 
-            last_entry = channel_last_entry_dict[channel["id"]]
+            last_entry = device_last_entry_dict[device["id"]]
 
-            if channel_data and channel_data["channel"]["last_entry_id"] > last_entry:
-                lat_log = f'{channel["latitude"]}, {channel["longitude"]}'
+            if device and dt.strptime(device["updated_at"], "%Y-%m-%dT%H:%M:%SZ") > dt.strptime(last_entry, "%Y-%m-%dT%H:%M:%SZ"):
+                device_location = device["data"]["location"]
+                lat_log = f"{round(float(device_location['latitude']), 6)}, {round(float(device_location['longitude']), 6)}"
                 address = address_converter(lat_log)
                 
                 location = [loc.get(lat_log) for loc in locations if loc.get(lat_log)]
@@ -79,103 +72,100 @@ def run(app):
                     location = location[0]
                 else:
                     location = post_location({
-                        "location": address.get("display_name"),
-                        "latitude": channel["latitude"],
-                        "longitude": channel["longitude"],
-                        "country": address.get("country"),
-                        "postalcode": address.get("postcode")
+                        "location": address.get("display_name", "{} - SC{}".format(device_location["city"], device["id"])),
+                        "latitude": round(float(device_location['latitude']), 6),
+                        "longitude": round(float(device_location['longitude']), 6),
+                        "country": device_location["country"],
+                        "city": device_location["city"]
                     })
 
                 #post node objects if it does not exist
-                airqo_node = [node.get("id") for node in nodes if node.get('uid') == str(channel["id"])]
-                if len(airqo_node) > 0:
-                    airqo_node = airqo_node[0]
+                smart_citizen__node = [node.get("id") for node in nodes if node.get('uid') == "sc_n{}".format(device["id"])]
+                if len(smart_citizen__node) > 0:
+                    smart_citizen__node = smart_citizen__node[0]
                 else:
-                    airqo_node = post_node(node={"uid": channel["id"], 'owner': int(OWNER_ID), 'location': location})
+                    smart_citizen__node = post_node(node={
+                        "uid": "sc_n{}".format(device["id"]),
+                        "description": device.get("description", ""),
+                        "inactive": "offline" in device["system_tags"],
+                        "indoor": "indoor" in device["system_tags"],
+                        "name": device["name"],
+                        "owner": int(OWNER_ID),
+                        "location": location
+                        })
+                print(smart_citizen__node)
+                #We are interested with temperature, humidity & particle matter readings
+                #These have measurement ids in the API of 1 - temp, 2 - humidity, 
+                #14 - PM 2.5, 13 - PM 10 & 27 - PM 1
 
-                sensor_type = [s_type.get("id") for s_type in sensor_types if str(s_type.get("uid")).lower() == "pms5003"]
-                if len(sensor_type) > 0:
-                    sensor_type = sensor_type[0]
-                else:
-                    sensor_type = post_sensor_type({ "uid": "pms5003","name": "PMS5003","manufacturer": "PlanTower" })
-  
-                # aiqo channel result has 4 field data that we need from 2 different sensors
-                # field1- Sensor1 PM2.5_CF_1_ug/m3, 
-                # field2 -Sensor1 PM10_CF_1_ug/m3, 
-                # field3 - Sensor2PM2.5_CF_1_ug/m3, 
-                # field4 - Sensor2 PM10_CF_1_ug/m3
-                #So we will create 2 sensors for each node
+                #we will filter sensor reading having those measurements
+                device_sensors = [ dev for dev in device["data"]["sensors"] if dev.get("measurement_id") in [1, 2, 13, 14, 27]]
 
-                sensor_1_id = [sen.get("id") for sen in sensors if sen.get("node") == airqo_node and sen.get("pin") == "1" and sen.get("sensor_type") == sensor_type]
-                if len(sensor_1_id) > 0:
-                    sensor_1_id = sensor_1_id[0]
-                else:
-                    sensor_1_id = post_sensor({
-                        "node": airqo_node,
-                        "pin": "1",
-                        "sensor_type": sensor_type,
-                        "public": False
-                    })
+                unique_sensor_values_map = {}
+                for dev_sensor in device_sensors:
+                    pin = dev_sensor["ancestry"]
+                    if pin is None:
+                        pin = str(dev_sensor["id"])
+                    unique_sensor_values_map[pin] = []
 
-                sensor_2_id = [sen.get("id") for sen in sensors if sen.get("node") == airqo_node and sen.get("pin") == "3" and sen.get("sensor_type") == sensor_type]
+                for sensor in device_sensors:
+                    sensor_type = [s_type.get("id") for s_type in sensor_types if str(s_type.get("uid")).lower() in sensor["name"].lower()]
+                    if len(sensor_type) > 0:
+                        sensor_type = sensor_type[0]
+                    else:
+                        sensor_type = post_sensor_type(
+                            { 
+                                "uid": sensor["name"].split("-")[0],
+                                "name": "SmartCitizen - {}".format(sensor["name"].split("-")[0]),
+                                "manufacturer": "SmartCitizen" 
+                            })
 
-                if len(sensor_2_id) > 0:
-                    sensor_2_id = sensor_2_id[0]
-                else:
-                    sensor_2_id = post_sensor({
-                        "node": airqo_node,
-                        "pin": "3",
-                        "sensor_type": sensor_type,
-                        "public": False
-                    })
+                    pin = sensor["ancestry"]
+                    if pin is None:
+                        pin = str(sensor["id"])
+                    sensor_id = [sen.get("id") for sen in sensors 
+                                    if sen.get("node") == smart_citizen__node and 
+                                    (sen.get("pin") == pin) and 
+                                    sen.get("sensor_type") == sensor_type]
+                    if len(sensor_id) > 0:
+                        sensor_id = sensor_id[0]
+                    else:
+                        sensor_id = post_sensor({
+                            "node": smart_citizen__node,
+                            "pin":  pin,
+                            "sensor_type": sensor_type,
+                            "public": False
+                        })
 
-                #loop through feed and post data values                    
-                for feed in channel_data["feeds"]:
-                    if feed["entry_id"] > last_entry:
-                        sensor_1_data_values = [
-                            {
-                                "value": float(feed["field1"]),
-                                "value_type": "P2"
-                            },
-                            {
-                                "value": float(feed["field2"]),
-                                "value_type": "P1"
-                            }
-                        ]
+                    if sensor["measurement_id"] == 1:
+                        value_type = "temperature" 
+                    elif sensor["measurement_id"] == 2:
+                        value_type = "humidity"
+                    elif sensor["measurement_id"] == 13:
+                        value_type = "P1"
+                    elif sensor["measurement_id"] == 14:
+                        value_type = "P2"
+                    else:
+                        value_type = "P0" 
 
-                        sensor_2_data_values = [
-                            {
-                                "value": float(feed["field3"]),
-                                "value_type": "P2"
-                            },
-                            {
-                                "value": float(feed["field4"]),
-                                "value_type": "P1"
-                            }
-                        ]
+                    unique_sensor_values_map[pin].append(
+                        {
+                            "value": sensor["value"],
+                            "value_type": value_type
+                        }
+                    )
 
-                        post_sensor_data({ 
-                            "sensordatavalues": sensor_1_data_values, 
-                            "timestamp": feed["created_at"]
-                            }, channel["id"], "1")
-
-                        post_sensor_data({ 
-                            "sensordatavalues": sensor_2_data_values, 
-                            "timestamp": feed["created_at"]
-                            }, channel["id"], "3")
+                for key in unique_sensor_values_map:
+                    post_sensor_data({ 
+                        "sensordatavalues": unique_sensor_values_map[key], 
+                        "timestamp": device["data"]["recorded_at"]
+                        }, "sc_n{}".format(device["id"]), key)
                 
                 #update pickle variable               
-                channel_last_entry_dict[channel["id"]] = channel_data["channel"]["last_entry_id"]
-                s3client.put_object(Body=pickle.dumps(channel_last_entry_dict), Bucket=S3_BUCKET_NAME, Key=S3_OBJECT_KEY)
+                device_last_entry_dict[device["id"]] = device["updated_at"]
+                s3client.put_object(Body=pickle.dumps(device_last_entry_dict), Bucket=S3_BUCKET_NAME, Key=S3_OBJECT_KEY)
             else:
-                app.log.warn("Channel feed - %s missing or not updated" % channel["id"])
+                app.log.warn("device feed - %s missing or not updated" % device["id"])
                 
             sleep(5)
-
-        channel_start_index = { "start": channel_start_index["start"] + 10 if channel_start_index["start"] + 10 < len(channels) else 0}
-        s3client.put_object(Body=pickle.dumps(channel_start_index), Bucket=S3_BUCKET_NAME, Key=S3_CHANNEL_START_KEY)
-
-        return {
-            "Last Updated": strftime("%a, %d %b %Y %H:%M:%S", localtime()),
-            "Channels Updated": [{"id": c["id"], "name": c["name"] } for c in sliced_channels]
-        }
+        return {}
