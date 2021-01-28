@@ -61,10 +61,10 @@ def get_sensors_africa_sensors():
     return []
     
 def get_sensors_africa_nodes():
-    response = requests.get(f"{SENSORS_AFRICA_API}/v2/nodes/",
+    response = requests.get(f"{SENSORS_AFRICA_API}/v1/node/",
     headers={"Authorization": f"Token {SENSORS_AFRICA_AUTH_TOKEN}"})
     if response.ok:
-        return response.json()
+        return response.json()["results"]
     return []
 
 def get_sensors_africa_locations():
