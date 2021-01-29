@@ -15,7 +15,7 @@ from chalicelib.sensorafrica import (
     post_sensor_data,
     post_sensor_type, )
 
-from chalicelib.settings import S3_BUCKET_NAME, S3_OBJECT_KEY,SMART_CITIZEN_AUTH_TOKEN, OWNER_ID
+from chalicelib.settings import HISTORICAL_DATA_ROLLUP, S3_BUCKET_NAME, S3_OBJECT_KEY,SMART_CITIZEN_AUTH_TOKEN, OWNER_ID
 from chalicelib.utils import address_converter
 
 from time import localtime, sleep, strftime
@@ -30,10 +30,20 @@ def get_device_data(device_id):
         raise Exception(response.reason)
     return response.json()
 
+def get_device_historical_data(device_id,sensor_id, from_date, to_date):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36",
+        "Authorization": f"Bearer {SMART_CITIZEN_AUTH_TOKEN}"}
+    response = requests.get(url="https://api.smartcitizen.me/v0/devices/{}/readings?sensor_id={}&rollup={}&from={}&to={}".format(device_id, sensor_id, HISTORICAL_DATA_ROLLUP, from_date, to_date), headers=headers)
+    if not response.ok:
+        raise Exception(response.reason)
+    return response.json()
+
 def history(app):
     #function assumes node & sensors already exists
     nodes = get_sensors_africa_nodes()
     sensors = get_sensors_africa_sensors()
+
 
 
 def run(app):

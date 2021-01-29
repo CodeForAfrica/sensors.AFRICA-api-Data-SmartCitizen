@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+HISTORICAL_DATA_ROLLUP = os.getenv("HISTORICAL_DATA_ROLLUP", "4h")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "cfa-airquality")
 S3_OBJECT_KEY = os.environ["S3_OBJECT_KEY"]
 SCHEDULE_RATE = os.getenv("SCHEDULE_RATE", 1)
